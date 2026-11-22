@@ -1,0 +1,23 @@
+{
+  "name": "digital-archaeologist",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Software engineering intelligence and historical code analysis platform",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev:backend": "npm run start:dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "test": "npm test --workspace backend",
+    "test:watch": "npm run test:watch --workspace backend",
+    "test:e2e": "npm run test:e2e --workspace backend",
+    "lint": "npm run lint --workspace backend && npm run lint --workspace frontend"
+  }
+}

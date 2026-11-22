@@ -1,0 +1,66 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-paper: #f5f2ea;
+  --color-paper-raised: #fffdf8;
+  --color-paper-sunken: #ece7dc;
+  --color-ink: #23211d;
+  --color-ink-soft: #5b564d;
+  --color-ink-faint: #8b857a;
+  --color-line: #d8d1c2;
+  --color-line-strong: #bdb3a0;
+  --color-clay: #a4562f;
+  --color-clay-dark: #7c3f22;
+  --color-moss: #4d6b52;
+  --color-alert: #9c3b2e;
+
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --font-sans: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  background: var(--color-paper);
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  background-image: radial-gradient(var(--color-line) 0.6px, transparent 0.6px);
+  background-size: 22px 22px;
+}
+
+::selection {
+  background: #e5cdb9;
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-clay);
+  outline-offset: 2px;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-clay);
+}
+
+.hairline {
+  border-color: var(--color-line);
+}
