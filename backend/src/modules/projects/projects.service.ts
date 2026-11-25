@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Types } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { AiConversation } from '../ai-assistant/schemas/ai-conversation.schema';
+import { Report } from '../reports/schemas/report.schema';
 import type { Page } from '../../common/interfaces/page.interface';
+import { CodeAnalysisService } from '../code-analysis/code-analysis.service';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { CreateProjectDto, UpdateProjectDto } from './dto/create-project.dto';
 import {
@@ -27,6 +31,11 @@ export class ProjectsService {
   constructor(
     private readonly projectsRepository: ProjectsRepository,
     private readonly repositoriesService: RepositoriesService,
+    private readonly codeAnalysisService: CodeAnalysisService,
+    @InjectModel(AiConversation.name)
+    private readonly conversationModel: Model<AiConversation>,
+    @InjectModel(Report.name)
+    private readonly reportModel: Model<Report>,
   ) {}
 
   async create(ownerId: string, dto: CreateProjectDto): Promise<ProjectView> {
@@ -106,6 +115,10 @@ export class ProjectsService {
       throw new NotFoundException('Project not found');
     }
     await this.repositoriesService.deleteProjectData(projectId, ownerId);
+    await this.codeAnalysisService.deleteForProject(ownerId, projectId);
+    const filter = { projectId: new Types.ObjectId(projectId), ownerId: new Types.ObjectId(ownerId) };
+    await this.conversationModel.deleteMany(filter).exec();
+    await this.reportModel.deleteMany(filter).exec();
   }
 
   private toView(project: ProjectDocument): ProjectView {

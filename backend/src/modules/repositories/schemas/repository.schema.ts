@@ -31,13 +31,16 @@ export class Repository {
   })
   ownerId!: Types.ObjectId;
 
-  @Prop({ type: String, enum: ['git_url'], required: true })
-  sourceType!: 'git_url';
+  @Prop({ type: String, enum: ['git_url', 'zip'], required: true })
+  sourceType!: 'git_url' | 'zip';
 
-  @Prop({ required: true })
-  repositoryUrl!: string;
+  @Prop({ type: String, default: null })
+  repositoryUrl!: string | null;
 
-  @Prop({ required: true })
+  @Prop({ type: String, default: null })
+  snapshotName!: string | null;
+
+  @Prop({ type: String, required: true })
   defaultBranch!: string;
 
   @Prop({ required: true })
@@ -73,6 +76,12 @@ export class Repository {
 
   @Prop({ type: [String], default: [] })
   detectedLanguages!: string[];
+
+  @Prop({ type: Number, default: 0 })
+  snapshotFileCount!: number;
+
+  @Prop({ type: Number, default: 0 })
+  snapshotTotalBytes!: number;
 
   @Prop({ type: Date, default: null })
   lastImportedAt!: Date | null;

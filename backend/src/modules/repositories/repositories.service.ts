@@ -7,10 +7,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
+import { basename } from 'node:path';
 import { Model, Types } from 'mongoose';
 import type { Page } from '../../common/interfaces/page.interface';
 import { Project, ProjectDocument } from '../projects/schemas/project.schema';
+import { TimelineService } from '../timeline/timeline.service';
 import { detectLicense } from './license-detector';
+import { detectLanguagesFromPaths } from './language-detector';
 import { GitMetadata, GitService } from './git.service';
 import type { ParsedGitCommit } from './git-log.parser';
 import { RemoteUrlValidator } from './remote-url.validator';
@@ -18,8 +21,11 @@ import {
   CommitInsert,
   ContributorRecord,
   RepositoriesRepository,
+  SnapshotFileInsert,
 } from './repositories.repository';
 import { RepositoryStorageService } from './repository-storage.service';
+import { SnapshotFileDocument } from './schemas/snapshot-file.schema';
+import { ZipImportService, ZipExtractionResult } from './zip-import.service';
 import {
   AnalysisJobDocument,
   JobStep,
@@ -35,8 +41,9 @@ import {
 export interface RepositoryView {
   id: string;
   projectId: string;
-  sourceType: 'git_url';
-  repositoryUrl: string;
+  sourceType: 'git_url' | 'zip';
+  repositoryUrl: string | null;
+  snapshotName: string | null;
   defaultBranch: string;
   status: RepositoryStatus;
   license: LicenseDetection | null;
@@ -46,6 +53,8 @@ export interface RepositoryView {
   totalCommitCount: number;
   analyzedCommitCount: number;
   detectedLanguages: string[];
+  snapshotFileCount: number;
+  snapshotTotalBytes: number;
   lastImportedAt: string | null;
   lastAnalyzedAt: string | null;
   lastError: string | null;
@@ -88,9 +97,23 @@ export interface ContributorView {
   lastCommitAt: string;
 }
 
+export interface SnapshotFileView {
+  path: string;
+  size: number;
+  extension: string | null;
+  language: string | null;
+}
+
 export interface RepositoryStatusView {
   repository: RepositoryView | null;
   job: JobView | null;
+}
+
+export interface UploadedArchive {
+  originalname: string;
+  buffer: Buffer;
+  size: number;
+  mimetype?: string;
 }
 
 export interface ImportRepositoryInput {
@@ -117,29 +140,18 @@ const STEP_LABELS: Record<string, string> = {
   persist: 'Storing analysis results',
 };
 
-const LANGUAGE_EXTENSIONS: Record<string, string> = {
-  ts: 'TypeScript',
-  tsx: 'TypeScript',
-  js: 'JavaScript',
-  jsx: 'JavaScript',
-  mjs: 'JavaScript',
-  cjs: 'JavaScript',
-  java: 'Java',
-  kt: 'Kotlin',
-  py: 'Python',
-  go: 'Go',
-  rs: 'Rust',
-  rb: 'Ruby',
-  php: 'PHP',
-  cs: 'C#',
-  c: 'C',
-  h: 'C',
-  cpp: 'C++',
-  hpp: 'C++',
-  swift: 'Swift',
-  scala: 'Scala',
-  sh: 'Shell',
-  sql: 'SQL',
+const ZIP_STEP_NAMES = [
+  'validate_archive',
+  'extract',
+  'inventory',
+  'persist',
+] as const;
+
+const ZIP_STEP_LABELS: Record<string, string> = {
+  validate_archive: 'Validating ZIP archive',
+  extract: 'Extracting snapshot files',
+  inventory: 'Building file inventory',
+  persist: 'Storing snapshot results',
 };
 
 @Injectable()
@@ -154,6 +166,8 @@ export class RepositoriesService {
     private readonly configService: ConfigService,
     @InjectModel(Project.name)
     private readonly projectModel: Model<ProjectDocument>,
+    private readonly zipImportService: ZipImportService,
+    private readonly timelineService: TimelineService,
   ) {}
 
   async importRepository(
@@ -210,6 +224,80 @@ export class RepositoriesService {
     };
   }
 
+  async importSnapshot(
+    ownerId: string,
+    projectId: string,
+    archive: UploadedArchive | undefined,
+  ): Promise<{ repository: RepositoryView; job: JobView }> {
+    const owner = new Types.ObjectId(ownerId);
+    await this.assertProjectOwner(projectId, owner);
+
+    const existing = await this.repositoriesRepository.findByProjectAndOwner(
+      projectId,
+      owner,
+    );
+    if (existing) {
+      throw new ConflictException('This project already has an imported repository');
+    }
+    if (!archive?.buffer || archive.buffer.length === 0) {
+      throw new BadRequestException('Choose a ZIP file to import');
+    }
+
+    const originalName = basename(archive.originalname || 'snapshot.zip');
+    if (!originalName.toLowerCase().endsWith('.zip')) {
+      throw new BadRequestException('Snapshot files must use the .zip extension');
+    }
+    const maximumBytes =
+      Number(this.configService.get('MAX_ZIP_SIZE_MB') ?? 50) * 1024 * 1024;
+    if (archive.size > maximumBytes || archive.buffer.length > maximumBytes) {
+      throw new BadRequestException(
+        `ZIP archive exceeds the ${Math.round(maximumBytes / 1024 / 1024)} MB size limit`,
+      );
+    }
+
+    const snapshotName =
+      originalName.replace(/[^\w.\- ]/g, '_').slice(0, 180) || 'snapshot.zip';
+    const repositoryId = new Types.ObjectId();
+    const reference = this.repositoryStorage.buildReference(
+      projectId,
+      repositoryId.toString(),
+    );
+
+    const repository = await this.repositoriesRepository.createRepository({
+      _id: repositoryId,
+      projectId: new Types.ObjectId(projectId),
+      ownerId: owner,
+      sourceType: 'zip',
+      repositoryUrl: null,
+      snapshotName,
+      defaultBranch: 'main',
+      localStorageReference: reference,
+    });
+
+    const job = await this.repositoriesRepository.createJob({
+      repositoryId,
+      projectId: new Types.ObjectId(projectId),
+      ownerId: owner,
+      type: 'import',
+    });
+
+    await this.projectModel.updateOne(
+      { _id: projectId, ownerId: owner },
+      { $set: { analysisStatus: 'queued' } },
+    );
+
+    void this.executeSnapshotJob(job, archive.buffer, reference, true).catch(
+      (error: unknown) => {
+        this.logger.error(`Snapshot import job ${job.id} failed unexpectedly`, error as Error);
+      },
+    );
+
+    return {
+      repository: this.toRepositoryView(repository),
+      job: this.toJobView(job),
+    };
+  }
+
   async reanalyze(ownerId: string, repositoryId: string): Promise<JobView> {
     const owner = new Types.ObjectId(ownerId);
     const repository = await this.getRepositoryEntity(repositoryId, owner);
@@ -240,12 +328,17 @@ export class RepositoriesService {
       { $set: { analysisStatus: 'queued' } },
     );
 
-    void this.executeJob(
-      job,
-      repository.repositoryUrl,
-      repository.localStorageReference,
-      false,
-    ).catch((error: unknown) => {
+    const task =
+      repository.sourceType === 'zip'
+        ? this.executeSnapshotJob(job, null, repository.localStorageReference, false)
+        : this.executeJob(
+            job,
+            repository.repositoryUrl as string,
+            repository.localStorageReference,
+            false,
+          );
+
+    void task.catch((error: unknown) => {
       this.logger.error(`Analysis job ${job.id} failed unexpectedly`, error as Error);
     });
 
@@ -319,6 +412,40 @@ export class RepositoriesService {
     };
   }
 
+  async findProjectCommit(
+    ownerId: string,
+    projectId: string,
+    hash: string,
+  ): Promise<CommitView | null> {
+    const repository = await this.getProjectRepositoryEntity(
+      projectId,
+      new Types.ObjectId(ownerId),
+    );
+    return this.findCommit(ownerId, repository.id, hash);
+  }
+
+  async findRepositoryCommit(
+    ownerId: string,
+    repositoryId: string,
+    hash: string,
+  ): Promise<CommitView | null> {
+    await this.getRepositoryEntity(repositoryId, new Types.ObjectId(ownerId));
+    return this.findCommit(ownerId, repositoryId, hash);
+  }
+
+  private async findCommit(
+    ownerId: string,
+    repositoryId: string,
+    hash: string,
+  ): Promise<CommitView | null> {
+    const commit = await this.repositoriesRepository.findCommitByHash(
+      new Types.ObjectId(repositoryId),
+      new Types.ObjectId(ownerId),
+      hash,
+    );
+    return commit ? this.toCommitView(commit) : null;
+  }
+
   async listBranches(ownerId: string, repositoryId: string): Promise<string[]> {
     const repository = await this.getRepositoryEntity(
       repositoryId,
@@ -346,6 +473,26 @@ export class RepositoriesService {
       owner,
     );
     return contributors.map((contributor) => this.toContributorView(contributor));
+  }
+
+  async listFiles(ownerId: string, repositoryId: string): Promise<SnapshotFileView[]> {
+    const owner = new Types.ObjectId(ownerId);
+    const repository = await this.getRepositoryEntity(repositoryId, owner);
+    const files = await this.repositoriesRepository.findSnapshotFiles(
+      repository._id,
+      owner,
+    );
+    return files.map((file) => this.toSnapshotFileView(file));
+  }
+
+  async listProjectFiles(ownerId: string, projectId: string): Promise<SnapshotFileView[]> {
+    const owner = new Types.ObjectId(ownerId);
+    const repository = await this.getProjectRepositoryEntity(projectId, owner);
+    const files = await this.repositoriesRepository.findSnapshotFiles(
+      repository._id,
+      owner,
+    );
+    return files.map((file) => this.toSnapshotFileView(file));
   }
 
   async listProjectCommits(
@@ -390,6 +537,7 @@ export class RepositoriesService {
 
   async deleteProjectData(projectId: string, ownerId: string): Promise<void> {
     const owner = new Types.ObjectId(ownerId);
+    await this.timelineService.deleteForProject(ownerId, projectId);
     const reference = await this.repositoriesRepository.deleteForProject(
       new Types.ObjectId(projectId),
       owner,
@@ -539,6 +687,206 @@ export class RepositoriesService {
     }
   }
 
+  private async executeSnapshotJob(
+    job: AnalysisJobDocument,
+    archive: Buffer | null,
+    storageReference: string,
+    isImport: boolean,
+  ): Promise<void> {
+    const ownerId = job.ownerId;
+    const steps: JobStep[] = ZIP_STEP_NAMES.map((name) => ({
+      name,
+      status: 'pending',
+      startedAt: null,
+      completedAt: null,
+      error: null,
+    }));
+
+    const sync = async (
+      status: JobStatus,
+      progress: number,
+      currentStep: string,
+      error: string | null = null,
+    ) => {
+      await this.repositoriesRepository.updateJob(job._id, ownerId, {
+        status,
+        progress,
+        currentStep,
+        error,
+        steps,
+        startedAt: status === 'running' ? job.startedAt ?? new Date() : job.startedAt,
+      });
+    };
+
+    const runStep = async <T>(
+      name: string,
+      progress: number,
+      action: () => Promise<T>,
+    ): Promise<T> => {
+      const step = steps.find((entry) => entry.name === name);
+      if (!step) throw new Error(`Unknown snapshot step: ${name}`);
+      step.status = 'running';
+      step.startedAt = new Date();
+      await sync('running', progress, ZIP_STEP_LABELS[name]);
+      try {
+        const result = await action();
+        step.status = 'completed';
+        step.completedAt = new Date();
+        await sync('running', progress + 8, ZIP_STEP_LABELS[name]);
+        return result;
+      } catch (error) {
+        step.status = 'failed';
+        step.completedAt = new Date();
+        step.error = this.errorMessage(error);
+        await sync('failed', progress, ZIP_STEP_LABELS[name], step.error);
+        throw error;
+      }
+    };
+
+    let localPath: string | null = null;
+    let extraction: ZipExtractionResult | null = null;
+    job.startedAt = new Date();
+    await sync('running', 4, 'Starting snapshot analysis');
+
+    try {
+      await runStep('validate_archive', 6, async () => {
+        if (isImport && !archive) {
+          throw new BadRequestException('ZIP archive is missing');
+        }
+      });
+
+      await runStep('extract', 14, async () => {
+        if (isImport) {
+          await this.repositoryStorage.remove(storageReference);
+          localPath = await this.repositoryStorage.prepare(storageReference);
+          extraction = await this.zipImportService.extract(
+            archive as Buffer,
+            localPath,
+          );
+        } else {
+          localPath = this.repositoryStorage.resolveReference(storageReference);
+          const stored = await this.repositoriesRepository.findSnapshotFiles(
+            job.repositoryId,
+            ownerId,
+          );
+          extraction = {
+            files: stored.map((file) => ({
+              path: file.path,
+              size: file.size,
+              extension: file.extension,
+              language: file.language,
+            })),
+            totalBytes: stored.reduce((sum, file) => sum + file.size, 0),
+          };
+        }
+      });
+
+      const license = await runStep('inventory', 30, async () => {
+        if (!extraction || extraction.files.length === 0) {
+          throw new BadRequestException('ZIP snapshot contains no files to analyse');
+        }
+        return detectLicense(localPath as string);
+      });
+
+      await runStep('persist', 82, async () => {
+        await this.persistSnapshotResults(job, extraction as ZipExtractionResult, license);
+      });
+
+      await this.repositoriesRepository.updateJob(job._id, ownerId, {
+        status: 'completed',
+        progress: 100,
+        currentStep: 'Complete',
+        error: null,
+        steps,
+        completedAt: new Date(),
+      });
+    } catch (error) {
+      const message = this.errorMessage(error);
+      this.logger.warn(`Snapshot job ${job.id} failed: ${message}`);
+      await this.repositoriesRepository.updateJob(job._id, ownerId, {
+        status: 'failed',
+        error: message,
+        steps,
+        completedAt: new Date(),
+      });
+      await this.repositoriesRepository.updateRepository(job.repositoryId, ownerId, {
+        status: 'failed',
+        lastError: message,
+      });
+      await this.projectModel.updateOne(
+        { _id: job.projectId, ownerId },
+        { $set: { analysisStatus: 'failed' } },
+      );
+      if (isImport) {
+        await this.repositoryStorage.remove(storageReference);
+      }
+    }
+  }
+
+  private async persistSnapshotResults(
+    job: AnalysisJobDocument,
+    extraction: ZipExtractionResult,
+    license: LicenseDetection,
+  ): Promise<void> {
+    const inserts: SnapshotFileInsert[] = extraction.files.map((file) => ({
+      repositoryId: job.repositoryId,
+      ownerId: job.ownerId,
+      path: file.path,
+      size: file.size,
+      extension: file.extension,
+      language: file.language,
+    }));
+    await this.repositoriesRepository.replaceSnapshotFiles(
+      job.repositoryId,
+      job.ownerId,
+      inserts,
+    );
+
+    const repository = await this.repositoriesRepository.findByIdAndOwner(
+      job.repositoryId.toString(),
+      job.ownerId,
+    );
+    const now = new Date();
+    await this.timelineService.rebuildFromSnapshot(
+      job.ownerId.toString(),
+      job.projectId.toString(),
+      job.repositoryId.toString(),
+      repository?.snapshotName ?? 'snapshot.zip',
+      inserts.map((file) => ({ path: file.path, size: file.size })),
+      now,
+    );
+
+    const detectedLanguages = detectLanguagesFromPaths(
+      extraction.files.map((file) => file.path),
+    );
+    await this.repositoriesRepository.updateRepository(job.repositoryId, job.ownerId, {
+      status: 'ready',
+      license,
+      branches: [],
+      tags: [],
+      headCommitHash: null,
+      totalCommitCount: 0,
+      analyzedCommitCount: 0,
+      detectedLanguages,
+      snapshotFileCount: inserts.length,
+      snapshotTotalBytes: extraction.totalBytes,
+      lastImportedAt: now,
+      lastAnalyzedAt: now,
+      lastError: null,
+    });
+
+    await this.projectModel.updateOne(
+      { _id: job.projectId, ownerId: job.ownerId },
+      {
+        $set: {
+          analysisStatus: 'completed',
+          lastAnalyzedAt: now,
+          primaryLanguage: detectedLanguages[0] ?? null,
+        },
+      },
+    );
+  }
+
   private async persistResults(
     job: AnalysisJobDocument,
     metadata: GitMetadata,
@@ -563,9 +911,17 @@ export class RepositoriesService {
       job.ownerId,
       inserts,
     );
+    await this.timelineService.rebuildFromCommits(
+      job.ownerId.toString(),
+      job.projectId.toString(),
+      job.repositoryId.toString(),
+      inserts,
+    );
 
     const now = new Date();
-    const detectedLanguages = this.detectLanguages(inserts);
+    const detectedLanguages = detectLanguagesFromPaths(
+      inserts.flatMap((commit) => commit.fileChanges.map((change) => change.path)),
+    );
     await this.repositoriesRepository.updateRepository(job.repositoryId, job.ownerId, {
       status: 'ready',
       license,
@@ -590,21 +946,6 @@ export class RepositoriesService {
         },
       },
     );
-  }
-
-  private detectLanguages(commits: CommitInsert[]): string[] {
-    const counts = new Map<string, number>();
-    for (const commit of commits) {
-      for (const change of commit.fileChanges) {
-        const extension = change.path.split('.').pop()?.toLowerCase() ?? '';
-        const language = LANGUAGE_EXTENSIONS[extension];
-        if (language) counts.set(language, (counts.get(language) ?? 0) + 1);
-      }
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, 5)
-      .map(([language]) => language);
   }
 
   private async assertProjectOwner(projectId: string, ownerId: Types.ObjectId): Promise<void> {
@@ -649,6 +990,7 @@ export class RepositoriesService {
       projectId: repository.projectId.toString(),
       sourceType: repository.sourceType,
       repositoryUrl: repository.repositoryUrl,
+      snapshotName: repository.snapshotName,
       defaultBranch: repository.defaultBranch,
       status: repository.status,
       license: repository.license,
@@ -658,6 +1000,8 @@ export class RepositoriesService {
       totalCommitCount: repository.totalCommitCount,
       analyzedCommitCount: repository.analyzedCommitCount,
       detectedLanguages: repository.detectedLanguages,
+      snapshotFileCount: repository.snapshotFileCount,
+      snapshotTotalBytes: repository.snapshotTotalBytes,
       lastImportedAt: repository.lastImportedAt?.toISOString() ?? null,
       lastAnalyzedAt: repository.lastAnalyzedAt?.toISOString() ?? null,
       lastError: repository.lastError,
@@ -704,6 +1048,15 @@ export class RepositoriesService {
       commitCount: contributor.commitCount,
       firstCommitAt: contributor.firstCommitAt.toISOString(),
       lastCommitAt: contributor.lastCommitAt.toISOString(),
+    };
+  }
+
+  private toSnapshotFileView(file: SnapshotFileDocument): SnapshotFileView {
+    return {
+      path: file.path,
+      size: file.size,
+      extension: file.extension,
+      language: file.language,
     };
   }
 }

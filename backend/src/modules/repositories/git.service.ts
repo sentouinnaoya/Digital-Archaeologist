@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -72,6 +72,79 @@ export class GitService {
     return parseGitLog(output);
   }
 
+  async listFilesAtCommit(localPath: string, commitHash: string): Promise<string[]> {
+    this.assertCommitHash(commitHash);
+    const client = this.createClient(localPath);
+    const output = await client.raw([
+      'ls-tree',
+      '-r',
+      '--name-only',
+      '--full-tree',
+      commitHash,
+    ]);
+    return String(output)
+      .split(/\r?\n/)
+      .map((path) => path.trim())
+      .filter(Boolean)
+      .filter((path) => !path.startsWith('"') && isSafeRepositoryPath(path));
+  }
+
+  async readFileAtCommit(
+    localPath: string,
+    commitHash: string,
+    path: string,
+  ): Promise<string> {
+    this.assertCommitHash(commitHash);
+    if (!isSafeRepositoryPath(path)) {
+      throw new BadRequestException('Unsafe repository path');
+    }
+    const client = this.createClient(localPath);
+    const output = await client.raw(['show', `${commitHash}:${path}`]);
+    const content = Buffer.isBuffer(output) ? output.toString('utf8') : String(output);
+    const maximumBytes =
+      Number(this.configService.get('MAX_SOURCE_FILE_SIZE_MB') ?? 2) * 1024 * 1024;
+    if (Buffer.byteLength(content, 'utf8') > maximumBytes) {
+      throw new BadRequestException(
+        `Source file exceeds the ${Math.round(maximumBytes / 1024 / 1024)} MB analysis limit`,
+      );
+    }
+    return content;
+  }
+
+  async diffNameStatus(
+    localPath: string,
+    fromHash: string,
+    toHash: string,
+  ): Promise<Array<{ status: string; path: string }>> {
+    this.assertCommitHash(fromHash);
+    this.assertCommitHash(toHash);
+    const client = this.createClient(localPath);
+    const output = await client.raw([
+      'diff',
+      '--name-status',
+      '--no-renames',
+      fromHash,
+      toHash,
+    ]);
+    return String(output)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .flatMap((line) => {
+        const separator = line.indexOf('\t');
+        if (separator < 0) return [];
+        const status = line.slice(0, separator).trim().charAt(0);
+        const path = line.slice(separator + 1).trim();
+        return status && isSafeRepositoryPath(path) ? [{ status, path }] : [];
+      });
+  }
+
+  private assertCommitHash(commitHash: string): void {
+    if (!/^[0-9a-f]{4,40}$/i.test(commitHash)) {
+      throw new BadRequestException('Invalid commit hash');
+    }
+  }
+
   private createClient(baseDirectory: string): SimpleGit {
     const timeout = Number(this.configService.get('CLONE_TIMEOUT_MS') ?? 180000);
     return simpleGit({
@@ -108,4 +181,17 @@ export class GitService {
       GIT_CONFIG_VALUE_2: '',
     });
   }
+}
+
+function isSafeRepositoryPath(path: string): boolean {
+  if (
+    !path ||
+    path.startsWith('/') ||
+    path.includes('\0') ||
+    path.includes('\\') ||
+    /^[A-Za-z]:/.test(path)
+  ) {
+    return false;
+  }
+  return !path.split('/').some((segment) => segment === '..' || segment === '.');
 }

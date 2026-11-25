@@ -6,7 +6,7 @@ A web-based software engineering intelligence platform that reconstructs, analys
 
 ## Current status
 
-**Phases 0, 1 and 2 complete.** The application provides authentication, project management, validated public HTTPS Git repository import, persisted analysis jobs, and real Git history/timeline data (commits, refs, contributors, licence and file changes) in the Next.js interface. No fake data is generated anywhere in the application.
+**Phases 0 through 9 complete.** The application provides authentication, project management, validated public HTTPS Git repository import, safe ZIP snapshot import, persisted analysis jobs, real Git history data (commits, refs, contributors, licence and file changes), evidence-linked timeline events with filters, a reconstructed historical structure view, native Tree-sitter source analysis for JavaScript/TypeScript/TSX/Java, an evidence-backed dependency graph with cycles, coupling metrics and React Flow visualisation, confidence-labelled architecture evidence with a strict anti-microservices heuristic, owner-scoped two-commit comparison with stored symbol/dependency diffs and bounded side-by-side source text, an opt-in local-only evidence assistant, and deterministic Markdown reports. Snapshots are explicitly labelled and do not invent commits; historical comparison is unavailable for ZIP imports. No fake data, graphs or AI answers are generated anywhere in the application.
 
 ## Requirements
 
@@ -15,6 +15,7 @@ A web-based software engineering intelligence platform that reconstructs, analys
 - Git
 - MongoDB Community Edition, running locally on `127.0.0.1:27017`
 - Redis is **not** required at this stage
+- Ollama is optional and must run locally only if you enable the AI assistant
 
 ## Local setup
 
@@ -35,6 +36,8 @@ npm run dev:frontend   # http://localhost:3000
 
 The frontend also reads `frontend/.env.local` if you prefer to keep its `NEXT_PUBLIC_*` settings next to the Next.js app.
 
+If you see `Cannot POST /api/v1/...`, the running backend was started before the current source files. Restart it with `npm run dev:backend`; plain `npm start` does not watch for changes. If you are serving a production frontend with `npm run start --workspace frontend`, restart that process too after `npm run build`.
+
 ## Useful commands
 
 | Command | Description |
@@ -43,6 +46,8 @@ The frontend also reads `frontend/.env.local` if you prefer to keep its `NEXT_PU
 | `npm test` | Run backend unit tests |
 | `npm run test:e2e` | Run backend integration tests (needs MongoDB running) |
 | `npm run lint` | Lint both workspaces |
+| `npm run audit` | Audit dependencies at moderate severity or above |
+| `npm run verify` | Lint, unit tests, integration tests, build and audit |
 
 ## Workspace layout
 

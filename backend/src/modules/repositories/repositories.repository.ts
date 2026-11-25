@@ -4,15 +4,29 @@ import { Model, Types } from 'mongoose';
 import { AnalysisJob, AnalysisJobDocument } from './schemas/analysis-job.schema';
 import { Commit, CommitDocument } from './schemas/commit.schema';
 import { Repository, RepositoryDocument } from './schemas/repository.schema';
+import {
+  SnapshotFile,
+  SnapshotFileDocument,
+} from './schemas/snapshot-file.schema';
 
 export interface CreateRepositoryInput {
   _id: Types.ObjectId;
   projectId: Types.ObjectId;
   ownerId: Types.ObjectId;
-  sourceType: 'git_url';
-  repositoryUrl: string;
+  sourceType: 'git_url' | 'zip';
+  repositoryUrl: string | null;
+  snapshotName?: string | null;
   defaultBranch: string;
   localStorageReference: string;
+}
+
+export interface SnapshotFileInsert {
+  repositoryId: Types.ObjectId;
+  ownerId: Types.ObjectId;
+  path: string;
+  size: number;
+  extension: string | null;
+  language: string | null;
 }
 
 export interface CreateJobInput {
@@ -52,6 +66,8 @@ export class RepositoriesRepository {
     private readonly commitModel: Model<CommitDocument>,
     @InjectModel(AnalysisJob.name)
     private readonly jobModel: Model<AnalysisJobDocument>,
+    @InjectModel(SnapshotFile.name)
+    private readonly snapshotFileModel: Model<SnapshotFileDocument>,
   ) {}
 
   createRepository(input: CreateRepositoryInput): Promise<RepositoryDocument> {
@@ -141,6 +157,14 @@ export class RepositoriesRepository {
     }
   }
 
+  findCommitByHash(
+    repositoryId: Types.ObjectId,
+    ownerId: Types.ObjectId,
+    hash: string,
+  ): Promise<CommitDocument | null> {
+    return this.commitModel.findOne({ repositoryId, ownerId, hash }).exec();
+  }
+
   async findCommitPage(
     repositoryId: Types.ObjectId,
     ownerId: Types.ObjectId,
@@ -191,6 +215,36 @@ export class RepositoriesRepository {
       .exec();
   }
 
+  async replaceSnapshotFiles(
+    repositoryId: Types.ObjectId,
+    ownerId: Types.ObjectId,
+    files: SnapshotFileInsert[],
+  ): Promise<void> {
+    await this.snapshotFileModel.deleteMany({ repositoryId, ownerId }).exec();
+    if (files.length > 0) {
+      await this.snapshotFileModel.insertMany(files, { ordered: false });
+    }
+  }
+
+  findSnapshotFiles(
+    repositoryId: Types.ObjectId,
+    ownerId: Types.ObjectId,
+    limit = 5000,
+  ): Promise<SnapshotFileDocument[]> {
+    return this.snapshotFileModel
+      .find({ repositoryId, ownerId })
+      .sort({ path: 1 })
+      .limit(limit)
+      .exec();
+  }
+
+  countSnapshotFiles(
+    repositoryId: Types.ObjectId,
+    ownerId: Types.ObjectId,
+  ): Promise<number> {
+    return this.snapshotFileModel.countDocuments({ repositoryId, ownerId }).exec();
+  }
+
   async deleteForProject(
     projectId: Types.ObjectId,
     ownerId: Types.ObjectId,
@@ -203,6 +257,7 @@ export class RepositoriesRepository {
     await Promise.all([
       this.commitModel.deleteMany({ repositoryId: repository._id }).exec(),
       this.jobModel.deleteMany({ repositoryId: repository._id }).exec(),
+      this.snapshotFileModel.deleteMany({ repositoryId: repository._id }).exec(),
     ]);
     await this.repositoryModel.deleteOne({ _id: repository._id }).exec();
     return repository.localStorageReference;

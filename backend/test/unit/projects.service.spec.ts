@@ -3,6 +3,13 @@ import { ProjectsService } from '../../src/modules/projects/projects.service';
 import { ProjectsRepository } from '../../src/modules/projects/projects.repository';
 import type { ProjectDocument } from '../../src/modules/projects/schemas/project.schema';
 
+// ProjectsService only needs the injected delete hook in these unit tests.
+// Mocking the module keeps the native Tree-sitter bindings out of this suite so
+// source-parser.spec.ts remains the only unit suite that loads them.
+jest.mock('../../src/modules/code-analysis/code-analysis.service', () => ({
+  CodeAnalysisService: class {},
+}));
+
 describe('ProjectsService', () => {
   let service: ProjectsService;
   let repository: jest.Mocked<Pick<
@@ -39,6 +46,13 @@ describe('ProjectsService', () => {
     service = new ProjectsService(
       repository as unknown as ProjectsRepository,
       { deleteProjectData: jest.fn() } as never,
+      { deleteForProject: jest.fn() } as never,
+      {
+        deleteMany: jest.fn(() => ({ exec: jest.fn().mockResolvedValue(undefined) })),
+      } as never,
+      {
+        deleteMany: jest.fn(() => ({ exec: jest.fn().mockResolvedValue(undefined) })),
+      } as never,
     );
   });
 

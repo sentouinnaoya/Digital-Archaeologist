@@ -18,6 +18,8 @@
     "test": "npm test --workspace backend",
     "test:watch": "npm run test:watch --workspace backend",
     "test:e2e": "npm run test:e2e --workspace backend",
-    "lint": "npm run lint --workspace backend && npm run lint --workspace frontend"
+    "lint": "npm run lint --workspace backend && npm run lint --workspace frontend",
+    "audit": "npm audit --audit-level=moderate",
+    "verify": "npm run lint && npm test && npm run test:e2e && npm run build && npm run audit"
   }
 }

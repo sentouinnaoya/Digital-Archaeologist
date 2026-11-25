@@ -14,6 +14,9 @@ import {
 } from '@/store/api/repositoriesApi';
 import { Alert, Badge, EmptyState, Skeleton } from '@/components/ui/States';
 import { Button } from '@/components/ui/Button';
+import { HistoricalComparisonPanel } from '@/components/comparison/HistoricalComparisonPanel';
+import { TimelinePanel } from '@/components/timeline/TimelinePanel';
+import { StructurePanel } from '@/components/timeline/StructurePanel';
 import { formatDate, shortHash } from '@/lib/format';
 import { getErrorMessage } from '@/lib/types';
 
@@ -50,13 +53,16 @@ export default function HistoryPage() {
       </Link>
 
       <header className="mt-7 border-b border-line pb-7">
-        <p className="eyebrow">Observed Git history</p>
+        <p className="eyebrow">
+          {repository?.sourceType === 'zip' ? 'Observed snapshot evidence' : 'Observed Git history'}
+        </p>
         <h1 className="mt-3 font-display text-4xl tracking-tight">
           {project ? `${project.name} — history` : 'Repository history'}
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-soft">
-          Every entry below is read from an imported Git repository. Messages are shown
-          verbatim and changed paths come from the commit itself, not from an estimate.
+          {repository?.sourceType === 'zip'
+            ? 'ZIP snapshots contain an observed file inventory only. No commits, branches, contributors or intent are inferred.'
+            : 'Every entry below is read from an imported Git repository. Messages are shown verbatim and changed paths come from the commit itself, not from an estimate.'}
         </p>
       </header>
 
@@ -84,10 +90,20 @@ export default function HistoryPage() {
           />
         </div>
       ) : (
-        <div className="mt-8 grid gap-8 lg:grid-cols-[1.6fr_1fr]">
+        <div className="mt-8 space-y-8">
+          <HistoricalComparisonPanel projectId={projectId} />
+          <TimelinePanel projectId={projectId} />
+          <StructurePanel
+            projectId={projectId}
+            headCommitHash={repository.headCommitHash}
+            sourceType={repository.sourceType}
+          />
+          <div className="grid gap-8 lg:grid-cols-[1.6fr_1fr]">
           <section>
             <div className="flex items-center justify-between border-b border-line pb-3">
-              <h2 className="font-display text-2xl">Commits</h2>
+              <h2 className="font-display text-2xl">
+                {repository.sourceType === 'zip' ? 'Commit records' : 'Commits'}
+              </h2>
               {commits ? (
                 <span className="font-mono text-[0.7rem] text-ink-faint">
                   {commits.meta.total} RECORDED
@@ -162,8 +178,12 @@ export default function HistoryPage() {
             ) : (
               <div className="mt-4">
                 <EmptyState
-                  title="No commits recorded"
-                  description="The repository was imported but no commit history was available on the analysed branch."
+                  title={repository.sourceType === 'zip' ? 'No Git history exists' : 'No commits recorded'}
+                  description={
+                    repository.sourceType === 'zip'
+                      ? 'ZIP snapshots are file inventories only; commits are deliberately not fabricated.'
+                      : 'The repository was imported but no commit history was available on the analysed branch.'
+                  }
                 />
               </div>
             )}
@@ -227,6 +247,7 @@ export default function HistoryPage() {
               </p>
             </div>
           </aside>
+          </div>
         </div>
       )}
     </div>

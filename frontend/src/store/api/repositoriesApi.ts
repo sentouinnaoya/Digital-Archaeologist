@@ -6,6 +6,7 @@ import type {
   Paginated,
   Repository,
   RepositoryStatusResponse,
+  SnapshotFile,
 } from '@/lib/types';
 import { baseApi } from './baseApi';
 
@@ -13,6 +14,11 @@ export interface ImportRepositoryInput {
   projectId: string;
   repositoryUrl: string;
   defaultBranch?: string;
+}
+
+export interface ImportSnapshotInput {
+  projectId: string;
+  file: File;
 }
 
 export interface CommitListArgs {
@@ -31,7 +37,25 @@ export const repositoriesApi = baseApi.injectEndpoints({
     importRepository: builder.mutation<RepositoryStatusResponse, ImportRepositoryInput>({
       query: (body) => ({ url: '/repositories/import', method: 'POST', body }),
       transformResponse: (response: Envelope<RepositoryStatusResponse>) => response.data,
-      invalidatesTags: ['Repository', 'Project', 'Commit'],
+      invalidatesTags: ['Repository', 'Project', 'Commit', 'Timeline', 'Structure'],
+    }),
+    importSnapshot: builder.mutation<RepositoryStatusResponse, ImportSnapshotInput>({
+      query: ({ projectId, file }) => {
+        const body = new FormData();
+        body.append('file', file);
+        return {
+          url: `/projects/${projectId}/snapshots/import`,
+          method: 'POST',
+          body,
+        };
+      },
+      transformResponse: (response: Envelope<RepositoryStatusResponse>) => response.data,
+      invalidatesTags: ['Repository', 'Project', 'Commit', 'Timeline', 'Structure'],
+    }),
+    getProjectFiles: builder.query<SnapshotFile[], string>({
+      query: (projectId) => `/repositories/projects/${projectId}/files`,
+      transformResponse: (response: Envelope<SnapshotFile[]>) => response.data,
+      providesTags: ['Repository'],
     }),
     reanalyzeRepository: builder.mutation<AnalysisJob, string>({
       query: (repositoryId) => ({
@@ -39,7 +63,7 @@ export const repositoriesApi = baseApi.injectEndpoints({
         method: 'POST',
       }),
       transformResponse: (response: Envelope<AnalysisJob>) => response.data,
-      invalidatesTags: ['Repository', 'Commit'],
+      invalidatesTags: ['Repository', 'Commit', 'Timeline', 'Structure'],
     }),
     getProjectCommits: builder.query<Paginated<Commit>, CommitListArgs>({
       query: ({ projectId, page = 1, limit = 20 }) => ({
@@ -77,6 +101,8 @@ export const repositoriesApi = baseApi.injectEndpoints({
 export const {
   useGetProjectRepositoryStatusQuery,
   useImportRepositoryMutation,
+  useImportSnapshotMutation,
+  useGetProjectFilesQuery,
   useReanalyzeRepositoryMutation,
   useGetProjectCommitsQuery,
   useGetProjectBranchesQuery,

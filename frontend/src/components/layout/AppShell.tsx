@@ -14,13 +14,6 @@ const primaryNav = [
   { href: '/projects', label: 'Projects', icon: Folder },
 ];
 
-const plannedNav = [
-  { label: 'Timeline', phase: 'Phase 3' },
-  { label: 'Architecture', phase: 'Phase 6' },
-  { label: 'Dependencies', phase: 'Phase 5' },
-  { label: 'Comparison', phase: 'Phase 7' },
-];
-
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const dispatch = useAppDispatch();
@@ -70,19 +63,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             );
           })}
 
-          <p className="mt-7 px-3 pb-2 font-mono text-[0.65rem] uppercase tracking-[0.15em] text-ink-faint">
-            Planned instruments
-          </p>
-          {plannedNav.map((item) => (
-            <div
-              key={item.label}
-              title={`${item.label} is scheduled for ${item.phase}`}
-              className="mb-1 flex items-center justify-between px-3 py-2 text-sm text-ink-faint"
-            >
-              <span>{item.label}</span>
-              <span className="font-mono text-[0.6rem]">{item.phase}</span>
-            </div>
-          ))}
         </nav>
 
         <div className="border-t border-line px-6 py-5">
@@ -101,7 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <LogOut size={14} /> Sign out
             </Button>
             <span
-              title="Settings is scheduled for Phase 9"
+              title="Settings is deferred and is not implemented in this release"
               className="inline-flex items-center gap-1 border border-line px-2 py-1.5 text-xs text-ink-faint"
             >
               <Settings size={14} /> Settings

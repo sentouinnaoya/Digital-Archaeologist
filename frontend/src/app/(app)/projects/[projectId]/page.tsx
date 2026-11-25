@@ -6,6 +6,11 @@ import { useGetProjectQuery } from '@/store/api/projectsApi';
 import { Alert, Badge, Skeleton } from '@/components/ui/States';
 import { Card } from '@/components/ui/Card';
 import { RepositoryPanel } from '@/components/repositories/RepositoryPanel';
+import { SourceAnalysisPanel } from '@/components/code-analysis/SourceAnalysisPanel';
+import { DependencyGraphPanel } from '@/components/dependency-analysis/DependencyGraphPanel';
+import { ArchitecturePanel } from '@/components/architecture/ArchitecturePanel';
+import { AiAssistantPanel } from '@/components/ai/AiAssistantPanel';
+import { ReportPanel } from '@/components/reports/ReportPanel';
 import { getErrorMessage } from '@/lib/types';
 
 function Detail({ label, value }: { label: string; value: string }) {
@@ -75,6 +80,26 @@ export default function ProjectDetailPage() {
             <div className="mt-4">
               <RepositoryPanel projectId={projectId} />
             </div>
+          </section>
+
+          <section className="mt-8">
+            <SourceAnalysisPanel projectId={projectId} />
+          </section>
+
+          <section className="mt-8">
+            <DependencyGraphPanel projectId={projectId} />
+          </section>
+
+          <section className="mt-8">
+            <ArchitecturePanel projectId={projectId} />
+          </section>
+
+          <section className="mt-8">
+            <AiAssistantPanel projectId={projectId} />
+          </section>
+
+          <section className="mt-8">
+            <ReportPanel projectId={projectId} />
           </section>
         </>
       ) : null}

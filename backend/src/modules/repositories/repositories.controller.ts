@@ -8,14 +8,20 @@ import {
   Post,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ObjectIdPipe } from '../../common/pipes/object-id.pipe';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { ImportRepositoryDto } from './dto/import-repository.dto';
-import { RepositoriesService } from './repositories.service';
+import {
+  RepositoriesService,
+  UploadedArchive,
+} from './repositories.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller()
@@ -29,6 +35,17 @@ export class RepositoriesController {
     @Body() dto: ImportRepositoryDto,
   ) {
     return this.repositoriesService.importRepository(user.sub, dto);
+  }
+
+  @Post('projects/:projectId/snapshots/import')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @UseInterceptors(FileInterceptor('file'))
+  importSnapshot(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId', ObjectIdPipe) projectId: string,
+    @UploadedFile() file: UploadedArchive | undefined,
+  ) {
+    return this.repositoriesService.importSnapshot(user.sub, projectId, file);
   }
 
   @Get('repositories/projects/:projectId/status')
@@ -75,6 +92,14 @@ export class RepositoriesController {
     @Param('projectId', ObjectIdPipe) projectId: string,
   ) {
     return this.repositoriesService.listProjectContributors(user.sub, projectId);
+  }
+
+  @Get('repositories/projects/:projectId/files')
+  projectFiles(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId', ObjectIdPipe) projectId: string,
+  ) {
+    return this.repositoriesService.listProjectFiles(user.sub, projectId);
   }
 
   @Get('repositories/:repositoryId')
@@ -138,6 +163,14 @@ export class RepositoriesController {
     @Param('repositoryId', ObjectIdPipe) repositoryId: string,
   ) {
     return this.repositoriesService.listContributors(user.sub, repositoryId);
+  }
+
+  @Get('repositories/:repositoryId/files')
+  files(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('repositoryId', ObjectIdPipe) repositoryId: string,
+  ) {
+    return this.repositoriesService.listFiles(user.sub, repositoryId);
   }
 
   @Get('repositories/:repositoryId/jobs')

@@ -31,38 +31,68 @@ Phases are completed one at a time. Each phase ends with a working application, 
 
 **Exit:** import a public HTTPS repository → watch job progress → examine real commits, refs and contributors; unit/integration tests, lint, build and audit pass.
 
-## Phase 2b — ZIP snapshot import
+## Phase 2b — ZIP snapshot import ✅
 
-Safe extraction limits, no fabricated Git history, clearly labelled snapshot-only analysis.
+- Safe memory-upload handling with configured archive, entry, per-file and total-size limits.
+- Path traversal, unsafe paths, symlinks, encrypted entries and duplicate entries are rejected.
+- Extracted files remain in isolated local storage; MongoDB stores only the file inventory.
+- Snapshots explicitly report `sourceType: 'zip'`, zero commits, no branches/tags/HEAD and an inventory endpoint; the UI labels Git history as unavailable.
 
-## Phase 3 — Timeline reconstruction
+## Phase 3 — Timeline reconstruction ✅
 
-Evidence-based event rules, confidence, date/contributor/type filters, event detail and historical structure view.
+- Deterministic event rules: one `commit` event per stored commit and one file-change event per observed Git status, plus a `snapshot` event for ZIP imports.
+- Every event stores `confidence: 'detected'` and explicit evidence objects (kind, commit hash, path, description).
+- Owner-scoped timeline list with type, contributor, date-range and pagination filters, plus event detail endpoint.
+- Historical structure view reconstructed by replaying observed file changes up to a selected commit; snapshots explicitly have no Git structure.
+- Timeline UI with filters, event detail/evidence panel and a structure explorer; all data comes from stored analysis results.
 
-## Phase 4 — Source code analysis
+## Phase 4 — Source code analysis ✅
 
-Tree-sitter native spike (WASM fallback needs approval), JS/TS/Java parsers, symbols/imports/modules, syntax-error tolerance, unsupported-language fallback, result caching.
+- Native Tree-sitter ABI spike succeeded on Windows/Node 22; no WASM fallback or user approval was required.
+- Native JS/TS/TSX/Java parsers extract symbols, static/CommonJS/dynamic/Java imports, modules and syntax diagnostics from stored source text.
+- Syntax errors are tolerated and reported; unsupported languages are explicitly labelled and receive no fabricated AST results.
+- Results are cached by `(repositoryId, commitHash/key, analyzerVersion)`, refreshable on demand, owner-scoped and deleted on project deletion.
+- Git source is read at an analysed commit using hardened `git show`; ZIP sources are read only from validated storage paths. File count and per-file size limits apply.
 
-## Phase 5 — Dependency visualisation
+## Phase 5 — Dependency visualisation ✅
 
-Graphology graphs, in-house Tarjan cycle detection, coupling metrics, React Flow explorer, historical graph comparison.
+- Directed graphs built only from imports recorded by Phase 4 source analysis; relative specifiers resolve against analysed paths, Java imports match parsed packages/classes, and everything else is labelled as external or unresolved.
+- In-house Tarjan SCC cycle detection over file nodes; self-loops are detected; `graphology-cycles` was not used because it does not exist on npm.
+- Owner-scoped project and repository graph APIs, cycle endpoint and two-commit graph comparison with an explicit evidence-limit caveat.
+- Coupling metrics (fan-in, fan-out, coupling, instability) derived from observed edges; no architectural quality scores are invented.
+- React Flow explorer with cycle highlighting, bounded node/edge display, node/edge evidence inspector and comparison view.
 
-## Phase 6 — Architecture evolution
+## Phase 6 — Architecture evolution ✅
 
-Evidence rules, confidence levels, snapshots, evolution view, strict anti-microservices heuristic.
+- Boundary candidates derived from observed file paths, Java packages, stored symbols and import edges; each claim carries `evidence[]` and `confidence` (`detected`, `likely`, `possible`, `unknown`).
+- Observed cross-module import direction with cycle check; layer order is not claimed when imports run in both directions.
+- Framework, entry-point, deployment-configuration and service-naming signals are reported as narrow observations, not architecture verdicts.
+- Strict anti-microservices heuristic: no positive microservice claim from folders or names; the response withholds the claim even when all supporting signal groups are present because runtime ownership and deployed topology cannot be verified from stored source evidence.
+- Owner-scoped project/repository architecture endpoints and two-analysis evolution view derived on demand from stored `analysisSnapshots`; no architecture collection and no additional source reads.
+- Frontend architecture panel shows modules, confidence-labelled claims, evidence, limits and comparison results.
 
-## Phase 7 — Historical comparison
+## Phase 7 — Historical comparison ✅
 
-Commit selection, file/structure/symbol/dependency diffs, side-by-side code diff.
+- Owner-scoped project/repository commit comparison from two analysed Git commits, combining the verbatim commit records, a validated Git `diff --name-status`, replayed structure paths, stored symbol changes and the existing stored-analysis dependency comparison.
+- Side-by-side source diff for one changed path at a time, read from the isolated local Git clone at validated commits. Source text is not persisted, imported code is never executed, and per-file size/line caps and missing sides are reported explicitly.
+- Unavailable symbol/dependency diffs are returned as `null` with a limit message when either commit lacks source analysis; ZIP snapshots are labelled unavailable because they have no commits.
+- Frontend comparison panel on the history page with commit selection, observed change/path/symbol/dependency summaries and a colour-coded side-by-side source table.
 
-## Phase 8 — AI assistant (post-MVP)
+## Phase 8 — AI assistant ✅
 
-Ollama adapter, disabled by default, evidence-grounded answers, conversation persistence.
+- Local-only Ollama adapter with `AI_ENABLED=false` default; non-loopback endpoints, credentials and unsupported schemes are rejected before any request.
+- Explicit per-request consent, bounded prompt built only from owner-scoped stored metadata/evidence, no raw source text, and JSON answers that must cite supplied evidence IDs or are rejected and not stored.
+- Owner-scoped conversation persistence with list/read/delete/status endpoints, evidence-ID-only citations, explicit basis/limits, and cascade deletion with the project.
+- Frontend opt-in assistant panel with clear disabled state, consent checkbox, conversation history, retained citations and evidence caveats.
 
-## Phase 9 — Reports and finalisation
+## Phase 9 — Reports and finalisation ✅
 
-Reports/export, full security suite, integration and E2E tests, performance pass, final docs.
+- Deterministic Markdown reports generated from stored, owner-scoped evidence with explicit citations, `basis`, `limits[]`, bounded evidence lines (`REPORT_MAX_ITEMS`), download/export in the UI and cascade deletion.
+- Dedicated security unit coverage for bearer-token type checks, ObjectId validation and refresh-cookie flags; owner isolation covered across API integration tests.
+- Evidence-based integration tests for assistant consent/disabled behaviour, citation enforcement, reports, owner isolation and cascade deletion; no browser E2E tooling was added.
+- Performance pass retained bounded pagination, caps on prompt/report evidence, existing clone/source/diff limits and indexes on new owner/project collections; no synthetic benchmarks or invented performance claims.
+- Final docs, environment examples and a single root `npm run verify` script; no new runtime packages were introduced.
 
 ## Deferred by explicit decision
 
-Redis/BullMQ (in-process jobs first), ZIP import (Phase 2b), AI (Phase 8), private repositories, team collaboration, additional languages.
+Redis/BullMQ (in-process jobs first), meaningful-snapshot selection, private repositories, team collaboration, additional languages, browser E2E automation.

@@ -114,7 +114,7 @@ export default function DashboardPage() {
             ) : (
               <EmptyState
                 title="No project records yet"
-                description="Create a project to establish a workspace before repository import becomes available."
+                description="Create a project to establish a workspace, then import a Git repository or ZIP snapshot."
                 action={
                   <Link
                     href="/projects"
@@ -134,11 +134,25 @@ export default function DashboardPage() {
             <div className="flex items-start gap-3">
               <FolderOpen size={18} className="mt-0.5 shrink-0 text-clay" strokeWidth={1.6} />
               <div>
-                <p className="text-sm font-medium">Repository import · Phase 2</p>
+                <p className="text-sm font-medium">Analysis instruments · available</p>
                 <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-                  Git URL import, commit history and contributor analysis are not implemented
-                  in this release. Project records can be created now and will be used by the
-                  analysis pipeline later.
+                  Git URL import, ZIP snapshots, commit history, timeline reconstruction,
+                  native source analysis, dependency graphs, architecture evidence and
+                  two-commit comparison are wired to stored evidence. The local-only assistant
+                  is opt-in; reports are generated deterministically from stored evidence.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 border border-line bg-paper-raised p-5">
+            <div className="flex items-start gap-3">
+              <FolderOpen size={18} className="mt-0.5 shrink-0 text-clay" strokeWidth={1.6} />
+              <div>
+                <p className="text-sm font-medium">Deferred work</p>
+                <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+                  Snapshot selection, private repositories, team collaboration, background
+                  workers and browser E2E automation are not available. ZIP snapshots never
+                  fabricate commits, and historical comparison is unavailable for them.
                 </p>
               </div>
             </div>

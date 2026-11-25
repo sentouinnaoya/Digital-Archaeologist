@@ -20,6 +20,19 @@ export const envSchema = z
     CLONE_TIMEOUT_MS: z.coerce.number().int().positive().default(180000),
     MAX_CLONE_SIZE_MB: z.coerce.number().int().positive().default(500),
     MAX_COMMITS_ANALYZED: z.coerce.number().int().positive().default(2000),
+    MAX_ZIP_SIZE_MB: z.coerce.number().int().positive().default(50),
+    MAX_ZIP_ENTRIES: z.coerce.number().int().positive().default(5000),
+    MAX_ZIP_FILE_SIZE_MB: z.coerce.number().int().positive().default(10),
+    MAX_ZIP_TOTAL_SIZE_MB: z.coerce.number().int().positive().default(200),
+    MAX_SOURCE_FILES_ANALYZED: z.coerce.number().int().positive().default(500),
+    MAX_SOURCE_FILE_SIZE_MB: z.coerce.number().int().positive().default(2),
+    MAX_DIFF_LINES: z.coerce.number().int().positive().default(2000),
+    AI_ENABLED: booleanString.default('false'),
+    OLLAMA_BASE_URL: z.string().url().default('http://127.0.0.1:11434'),
+    OLLAMA_MODEL: z.string().min(1).default('llama3.2'),
+    AI_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+    AI_MAX_EVIDENCE_ITEMS: z.coerce.number().int().positive().default(20),
+    REPORT_MAX_ITEMS: z.coerce.number().int().positive().default(20),
   })
   .passthrough();
 

@@ -36,7 +36,7 @@ An interpretation is never persisted or displayed as a verified historical fact.
 7. Basic dependency extraction and graph visualisation
 8. Historical commit comparison
 
-Advanced architecture detection, the AI assistant, ZIP import, private repositories, reports and team collaboration are post-MVP work.
+Evidence-based architecture candidates, confidence levels, two-commit comparison (Git changes, replayed paths, stored symbols/dependencies and bounded side-by-side source text), the opt-in local-only evidence assistant and evidence-based Markdown reports are implemented. Architecture style classification, private repositories and team collaboration are post-MVP work. ZIP snapshot inventory is available for projects without Git history; it never fabricates commits, and historical comparison is labelled unavailable for snapshots.
 
 ## Product principles
 
